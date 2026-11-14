@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="ka">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>eBay ვინტაჟური საათების AI მონიტორი</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Georgian:wght@400;500;600;700&display=swap');
+    body { font-family: 'Noto Sans Georgian', sans-serif; }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen">
+
+  <script>
+    const SUPABASE_URL = "https://mxcbyxvrabhwpzecugkx.supabase.co";
+    const SUPABASE_ANON_KEY = "sb_publishable_orsJWjVuw_BgYqfEJqV0qQ_JCx1Zsy7";
+    const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  </script>
+
+  <header class="border-b border-slate-800 bg-slate-900/90 sticky top-0 z-30 backdrop-blur">
+    <div class="max-w-7xl mx-auto px-4 py-4 flex flex-wrap items-center justify-between gap-4">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 font-bold text-lg">⌚</div>
+        <div>
+          <h1 class="text-lg font-bold text-white">eBay ვინტაჟური საათების მონიტორი</h1>
+          <p class="text-xs text-slate-400">პირდაპირი ბაზა • Gemini AI ფოტო-ფილტრი</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-3">
+        <span id="syncStatus" class="text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-3 py-1.5 rounded-lg">● დაკავშირებულია</span>
+        <button onclick="loadData()" class="px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium border border-slate-700">🔄 განახლება</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto px-4 py-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
+    <aside class="lg:col-span-4 space-y-5">
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-5">
+        <h2 class="text-sm font-bold text-amber-400 uppercase tracking-wider">ძიების პარამეტრები</h2>
+
+        <div>
+          <label class="block text-xs font-medium text-slate-300 mb-2">საკვანძო სიტყვების სია</label>
+          <div class="flex gap-2 mb-3">
+            <input id="newKeyword" type="text" placeholder="მაგ: omega gold plated lot" class="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:border-amber-500 focus:outline-none" onkeydown="if(event.key==='Enter') addKeyword()" />
+            <button onclick="addKeyword()" class="px-3 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs">+ დამატება</button>
+          </div>
+          <div id="keywordsList" class="space-y-1.5 max-h-60 overflow-y-auto pr-1"></div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-medium text-slate-300 mb-2">საორიენტაციო ფოტოს ლინკი (არასავალდებულო)</label>
+          <input id="refImageUrl" type="text" placeholder="ჩასვი სასურველი საათის ფოტოს URL..." class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:border-amber-500 focus:outline-none" />
+          <p class="text-[11px] text-slate-500 mt-1">თუ მიუთითებ, AI მხოლოდ ამ სტილის მსგავს ლოტებს აარჩევს.</p>
+        </div>
+
+        <div>
+          <label class="block text-xs font-medium text-slate-300 mb-2">სკანირების რეჟიმი</label>
+          <select id="scanMode" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:border-amber-500 focus:outline-none">
+            <option value="new">მხოლოდ ახალდამატებულები (Newly Listed)</option>
+            <option value="deep">ღრმა ძიება (ყველა გვერდი - იაფიც და ძვირიც)</option>
+          </select>
+        </div>
+
+        <button onclick="saveSettings()" class="w-full py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-sm transition">
+          💾 პარამეტრების შენახვა
+        </button>
+      </div>
+    </aside>
+
+    <section class="lg:col-span-8 space-y-5">
+      <div class="flex flex-wrap items-center justify-between gap-3 bg-slate-900 border border-slate-800 p-3 rounded-2xl">
+        <div class="flex gap-2">
+          <button id="tabNew" onclick="switchTab('new')" class="px-4 py-2 rounded-xl text-xs font-bold bg-amber-500 text-slate-950">
+            ✨ ახალი ნაპოვნი (<span id="newCount">0</span>)
+          </button>
+          <button id="tabArchived" onclick="switchTab('archived')" class="px-4 py-2 rounded-xl text-xs font-bold bg-slate-800 text-slate-300 hover:bg-slate-700">
+            📁 უკვე ნანახი / არქივი (<span id="archivedCount">0</span>)
+          </button>
+        </div>
+
+        <button id="archiveAllBtn" onclick="archiveAll()" class="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-medium text-amber-400">
+          ✓ გადაიტანე ყველა უკვე ნანახ სიაში
+        </button>
+      </div>
+
+      <div id="lotsGrid" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
+    </section>
+  </main>
+
+  <script>
+    let currentTab = 'new';
+    let allLots = [];
+    let keywords = [];
+
+    async function loadData() {
+      document.getElementById('syncStatus').textContent = '⏳ იტვირთება...';
+      const { data: settings } = await db.from('app_settings').select('*').eq('id', 1).single();
+      if (settings) {
+        keywords = settings.keywords || [];
+        document.getElementById('refImageUrl').value = settings.reference_image_url || '';
+        document.getElementById('scanMode').value = settings.scan_mode || 'new';
+        renderKeywords();
+      }
+
+      const { data: lots } = await db.from('watch_lots').select('*').order('found_at', { ascending: false });
+      allLots = lots || [];
+      renderLots();
+      document.getElementById('syncStatus').textContent = '● განახლებულია';
+    }
+
+    function renderKeywords() {
+      const container = document.getElementById('keywordsList');
+      container.innerHTML = keywords.map((kw, idx) => `
+        <div class="flex items-center justify-between bg-slate-950 border border-slate-800 px-3 py-2 rounded-xl text-xs">
+          <span class="text-slate-200 truncate pr-2">${kw}</span>
+          <button onclick="removeKeyword(${idx})" class="text-rose-400 hover:text-rose-300 font-bold">✕</button>
+        </div>
+      `).join('');
+    }
+
+    function addKeyword() {
+      const input = document.getElementById('newKeyword');
+      const val = input.value.trim();
+      if (val && !keywords.includes(val)) {
+        keywords.push(val);
+        input.value = '';
+        renderKeywords();
+      }
+    }
+
+    function removeKeyword(idx) {
+      keywords.splice(idx, 1);
+      renderKeywords();
+    }
+
+    async function saveSettings() {
+      const refUrl = document.getElementById('refImageUrl').value.trim();
+      const mode = document.getElementById('scanMode').value;
+      await db.from('app_settings').upsert({
+        id: 1,
+        keywords: keywords,
+        reference_image_url: refUrl,
+        scan_mode: mode
+      });
+      alert('პარამეტრები შენახულია! შემდეგ სკანირებაზე სკრიპტი ამ სიტყვებს გამოიყენებს.');
+    }
+
+    function switchTab(tab) {
+      currentTab = tab;
+      document.getElementById('tabNew').className = tab === 'new'
+        ? 'px-4 py-2 rounded-xl text-xs font-bold bg-amber-500 text-slate-950'
+        : 'px-4 py-2 rounded-xl text-xs font-bold bg-slate-800 text-slate-300 hover:bg-slate-700';
+      document.getElementById('tabArchived').className = tab === 'archived'
+        ? 'px-4 py-2 rounded-xl text-xs font-bold bg-amber-500 text-slate-950'
+        : 'px-4 py-2 rounded-xl text-xs font-bold bg-slate-800 text-slate-300 hover:bg-slate-700';
+      document.getElementById('archiveAllBtn').style.display = tab === 'new' ? 'block' : 'none';
+      renderLots();
+    }
+
+    async function moveToArchive(id) {
+      await db.from('watch_lots').update({ status: 'archived' }).eq('id', id);
+      allLots = allLots.map(l => l.id === id ? { ...l, status: 'archived' } : l);
+      renderLots();
+    }
+
+    async function archiveAll() {
+      const newIds = allLots.filter(l => l.status === 'new').map(l => l.id);
+      if (!newIds.length) return;
+      await db.from('watch_lots').update({ status: 'archived' }).in('id', newIds);
+      allLots = allLots.map(l => ({ ...l, status: 'archived' }));
+      renderLots();
+    }
+
+    function renderLots() {
+      const newLots = allLots.filter(l => l.status === 'new');
+      const archivedLots = allLots.filter(l => l.status === 'archived');
+      document.getElementById('newCount').textContent = newLots.length;
+      document.getElementById('archivedCount').textContent = archivedLots.length;
+
+      const list = currentTab === 'new' ? newLots : archivedLots;
+      const grid = document.getElementById('lotsGrid');
+
+      if (!list.length) {
+        grid.innerHTML = `<div class="col-span-full bg-slate-900/60 border border-dashed border-slate-800 rounded-2xl p-10 text-center text-sm text-slate-400">
+          ${currentTab === 'new' ? 'სამუშაო დაფა სუფთაა. ახალი ლოტები ავტომატურად გამოჩნდება.' : 'არქივი ცარიელია.'}
+        </div>`;
+        return;
+      }
+
+      grid.innerHTML = list.map(lot => {
+        const dateStr = new Date(lot.found_at).toLocaleString('ka-GE');
+        return `
+          <div class="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden flex flex-col justify-between">
+            <div>
+              <div class="relative h-52 bg-slate-950">
+                <img src="${lot.image_url}" class="w-full h-full object-cover" onerror="this.src='https://placehold.co/600x400/0f172a/fbbf24?text=No+Image'" />
+                <span class="absolute top-3 left-3 px-2.5 py-1 rounded-lg bg-slate-950/90 text-amber-400 font-bold text-xs border border-amber-500/30">${lot.price || 'N/A'}</span>
+                <span class="absolute top-3 right-3 px-2 py-1 rounded-lg bg-slate-950/80 text-slate-300 text-[11px]">${lot.lot_type || 'eBay'}</span>
+              </div>
+              <div class="p-4 space-y-2">
+                <div class="text-[11px] text-slate-500">მოძებნილია: ${dateStr}</div>
+                <h3 class="text-sm font-semibold text-white line-clamp-2">${lot.title}</h3>
+                <p class="text-xs text-emerald-300 bg-emerald-950/40 border border-emerald-800/40 p-2.5 rounded-xl">🤖 ${lot.ai_note || 'AI-მ დაადასტურა შესაბამისობა'}</p>
+              </div>
+            </div>
+            <div class="p-4 pt-0 flex gap-2">
+              <a href="${lot.ebay_url}" target="_blank" class="flex-1 text-center py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs">eBay-ზე ნახვა ↗</a>
+              ${currentTab === 'new' ? `<button onclick="moveToArchive(${lot.id})" class="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs">✓ ნანახია</button>` : ''}
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    loadData();
+  </script>
+</body>
+</html>
