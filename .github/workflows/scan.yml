@@ -14,7 +14,7 @@ jobs:
         with:
           python-version: '3.11'
       - name: Install dependencies
-        run: pip install google-genai supabase pillow curl_cffi
+        run: pip install google-genai supabase pillow curl_cffi ddgs
       - name: Run scanner
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
