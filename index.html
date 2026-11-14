@@ -9,6 +9,10 @@
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Georgian:wght@400;500;600;700&display=swap');
     body { font-family: 'Noto Sans Georgian', sans-serif; }
+    .custom-scroll::-webkit-scrollbar { width: 6px; }
+    .custom-scroll::-webkit-scrollbar-track { background: #020617; border-radius: 8px; }
+    .custom-scroll::-webkit-scrollbar-thumb { background: #334155; border-radius: 8px; }
+    .custom-scroll::-webkit-scrollbar-thumb:hover { background: #f59e0b; }
   </style>
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen">
@@ -36,25 +40,60 @@
   </header>
 
   <main class="max-w-7xl mx-auto px-4 py-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
+    <!-- მარცხენა მართვის პანელი -->
     <aside class="lg:col-span-4 space-y-5">
       <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-5">
         <h2 class="text-sm font-bold text-amber-400 uppercase tracking-wider">ძიების პარამეტრები</h2>
 
-        <div>
-          <label class="block text-xs font-medium text-slate-300 mb-2">საკვანძო სიტყვების სია</label>
-          <div class="flex gap-2 mb-3">
-            <input id="newKeyword" type="text" placeholder="მაგ: omega gold plated lot" class="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:border-amber-500 focus:outline-none" onkeydown="if(event.key==='Enter') addKeyword()" />
-            <button onclick="addKeyword()" class="px-3 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs">+ დამატება</button>
+        <!-- ერთიანი საძიებო და დასამატებელი ველი -->
+        <div class="space-y-2">
+          <label class="block text-xs font-medium text-slate-300">სიტყვის ჩაწერა (ძიება ან დამატება)</label>
+          <input
+            id="keywordInput"
+            type="text"
+            oninput="filterKeywordsList()"
+            onkeydown="if(event.key==='Enter') addKeyword()"
+            placeholder="ჩაწერე სიტყვა..."
+            class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-xs text-white focus:border-amber-500 focus:outline-none"
+          />
+          <div class="grid grid-cols-2 gap-2">
+            <button onclick="addKeyword()" class="py-2 px-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs flex items-center justify-center gap-1">
+              <span>+</span> სიაში დამატება
+            </button>
+            <button onclick="searchDirectEbay()" class="py-2 px-3 rounded-xl bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/40 font-bold text-xs flex items-center justify-center gap-1">
+              <span>🔍</span> ამ სიტყვით ძიება
+            </button>
           </div>
-          <div id="keywordsList" class="space-y-1.5 max-h-60 overflow-y-auto pr-1"></div>
         </div>
 
+        <!-- ჩამოსაშლელი და ჩამოსასქროლი საკვანძო სიტყვების სია -->
+        <div class="border border-slate-800 rounded-xl bg-slate-950/60 overflow-hidden">
+          <button
+            type="button"
+            onclick="toggleKeywordsDropdown()"
+            class="w-full px-3.5 py-2.5 flex items-center justify-between text-xs font-semibold text-slate-200 hover:bg-slate-800/60 transition"
+          >
+            <span>📋 შენახული სიტყვების სია (<span id="kwCount">0</span>)</span>
+            <span id="dropdownArrow" class="text-amber-400 transition-transform duration-200">▼</span>
+          </button>
+
+          <div id="keywordsDropdownBody" class="border-t border-slate-800 p-2.5">
+            <div class="flex items-center justify-between text-[11px] text-slate-400 pb-2 mb-2 border-b border-slate-800/80">
+              <span>მონიშნულები სკანირდება ავტომატურად</span>
+              <button onclick="toggleAllKeywords()" class="text-amber-400 hover:underline">ყველას მონიშვნა/მოხსნა</button>
+            </div>
+            <div id="keywordsList" class="space-y-1.5 max-h-56 overflow-y-auto custom-scroll pr-1"></div>
+          </div>
+        </div>
+
+        <!-- საორიენტაციო ფოტო -->
         <div>
           <label class="block text-xs font-medium text-slate-300 mb-2">საორიენტაციო ფოტოს ლინკი (არასავალდებულო)</label>
           <input id="refImageUrl" type="text" placeholder="ჩასვი სასურველი საათის ფოტოს URL..." class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:border-amber-500 focus:outline-none" />
           <p class="text-[11px] text-slate-500 mt-1">თუ მიუთითებ, AI მხოლოდ ამ სტილის მსგავს ლოტებს აარჩევს.</p>
         </div>
 
+        <!-- სკანირების რეჟიმი -->
         <div>
           <label class="block text-xs font-medium text-slate-300 mb-2">სკანირების რეჟიმი</label>
           <select id="scanMode" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:border-amber-500 focus:outline-none">
@@ -69,6 +108,7 @@
       </div>
     </aside>
 
+    <!-- მარჯვენა მთავარი დაფა -->
     <section class="lg:col-span-8 space-y-5">
       <div class="flex flex-wrap items-center justify-between gap-3 bg-slate-900 border border-slate-800 p-3 rounded-2xl">
         <div class="flex gap-2">
@@ -85,6 +125,11 @@
         </button>
       </div>
 
+      <!-- ნაპოვნი ლოტების ფილტრი დაფაზე -->
+      <div class="flex items-center gap-2">
+        <input id="lotsFilterInput" type="text" oninput="renderLots()" placeholder="🔎 გაფილტრე ნაპოვნი ლოტები სათაურით ან აღწერით..." class="flex-1 bg-slate-900 border border-slate-800 rounded-xl px-3.5 py-2 text-xs text-white focus:border-amber-500 focus:outline-none" />
+      </div>
+
       <div id="lotsGrid" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
     </section>
   </main>
@@ -92,13 +137,15 @@
   <script>
     let currentTab = 'new';
     let allLots = [];
-    let keywords = [];
+    let keywordItems = []; // [{ text: '...', active: true }]
+    let isDropdownOpen = true;
 
     async function loadData() {
       document.getElementById('syncStatus').textContent = '⏳ იტვირთება...';
       const { data: settings } = await db.from('app_settings').select('*').eq('id', 1).single();
       if (settings) {
-        keywords = settings.keywords || [];
+        const rawKw = settings.keywords || [];
+        keywordItems = rawKw.map(item => typeof item === 'string' ? { text: item, active: true } : item);
         document.getElementById('refImageUrl').value = settings.reference_image_url || '';
         document.getElementById('scanMode').value = settings.scan_mode || 'new';
         renderKeywords();
@@ -110,41 +157,105 @@
       document.getElementById('syncStatus').textContent = '● განახლებულია';
     }
 
+    function toggleKeywordsDropdown() {
+      isDropdownOpen = !isDropdownOpen;
+      const body = document.getElementById('keywordsDropdownBody');
+      const arrow = document.getElementById('dropdownArrow');
+      body.style.display = isDropdownOpen ? 'block' : 'none';
+      arrow.style.transform = isDropdownOpen ? 'rotate(0deg)' : 'rotate(-90deg)';
+    }
+
+    function filterKeywordsList() {
+      renderKeywords();
+    }
+
     function renderKeywords() {
+      const searchVal = document.getElementById('keywordInput').value.trim().toLowerCase();
+      document.getElementById('kwCount').textContent = keywordItems.length;
+
+      const filtered = keywordItems
+        .map((item, idx) => ({ ...item, originalIdx: idx }))
+        .filter(item => !searchVal || item.text.toLowerCase().includes(searchVal));
+
       const container = document.getElementById('keywordsList');
-      container.innerHTML = keywords.map((kw, idx) => `
-        <div class="flex items-center justify-between bg-slate-950 border border-slate-800 px-3 py-2 rounded-xl text-xs">
-          <span class="text-slate-200 truncate pr-2">${kw}</span>
-          <button onclick="removeKeyword(${idx})" class="text-rose-400 hover:text-rose-300 font-bold">✕</button>
+      if (!filtered.length) {
+        container.innerHTML = `<div class="text-center py-4 text-[11px] text-slate-500">
+          ${searchVal ? 'ეს სიტყვა სიაში არ არის — დააჭირე "+ სიაში დამატება"' : 'სია ცარიელია'}
+        </div>`;
+        return;
+      }
+
+      container.innerHTML = filtered.map(item => `
+        <div class="flex items-center justify-between gap-2 bg-slate-900 border ${item.active ? 'border-slate-700' : 'border-slate-800/50 opacity-55'} px-2.5 py-2 rounded-lg text-xs">
+          <label class="flex items-center gap-2 flex-1 min-w-0 cursor-pointer">
+            <input type="checkbox" ${item.active ? 'checked' : ''} onchange="toggleKeyword(${item.originalIdx})" class="accent-amber-500 rounded cursor-pointer" />
+            <span class="text-slate-200 truncate" title="${item.text}">${item.text}</span>
+          </label>
+          <div class="flex items-center gap-1.5 shrink-0">
+            <button onclick="openEbayWithWord('${item.text.replace(/'/g, "\\'")}')" title="პირდაპირ eBay-ზე ნახვა" class="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-sky-500/20 text-sky-400 text-[10px]">🔍</button>
+            <button onclick="removeKeyword(${item.originalIdx})" title="წაშლა" class="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-rose-500/20 text-rose-400 font-bold text-[10px]">✕</button>
+          </div>
         </div>
       `).join('');
     }
 
     function addKeyword() {
-      const input = document.getElementById('newKeyword');
+      const input = document.getElementById('keywordInput');
       const val = input.value.trim();
-      if (val && !keywords.includes(val)) {
-        keywords.push(val);
-        input.value = '';
-        renderKeywords();
+      if (!val) return;
+      if (!keywordItems.some(k => k.text.toLowerCase() === val.toLowerCase())) {
+        keywordItems.unshift({ text: val, active: true });
       }
+      input.value = '';
+      if (!isDropdownOpen) toggleKeywordsDropdown();
+      renderKeywords();
+    }
+
+    function toggleKeyword(idx) {
+      keywordItems[idx].active = !keywordItems[idx].active;
+      renderKeywords();
+    }
+
+    function toggleAllKeywords() {
+      const allActive = keywordItems.every(k => k.active);
+      keywordItems = keywordItems.map(k => ({ ...k, active: !allActive }));
+      renderKeywords();
     }
 
     function removeKeyword(idx) {
-      keywords.splice(idx, 1);
+      keywordItems.splice(idx, 1);
       renderKeywords();
+    }
+
+    function openEbayWithWord(word) {
+      const url = 'https://www.ebay.com/sch/i.html?_nkw=' + encodeURIComponent(word) + '&_sacat=260324&_sop=10';
+      window.open(url, '_blank');
+    }
+
+    function searchDirectEbay() {
+      const val = document.getElementById('keywordInput').value.trim();
+      if (!val) {
+        alert('ჩაწერე სიტყვა ველში, რომ მოვძებნო.');
+        return;
+      }
+      // ასევე ვფილტრავთ დაფაზეც და ვხსნით eBay-ზეც
+      document.getElementById('lotsFilterInput').value = val;
+      renderLots();
+      openEbayWithWord(val);
     }
 
     async function saveSettings() {
       const refUrl = document.getElementById('refImageUrl').value.trim();
       const mode = document.getElementById('scanMode').value;
+      // ბაზაში ვინახავთ მხოლოდ მონიშნულ აქტიურ სიტყვებს სკანერისთვის, ან მთლიან ობიექტს
+      const activeWords = keywordItems.filter(k => k.active).map(k => k.text);
       await db.from('app_settings').upsert({
         id: 1,
-        keywords: keywords,
+        keywords: activeWords,
         reference_image_url: refUrl,
         scan_mode: mode
       });
-      alert('პარამეტრები შენახულია! შემდეგ სკანირებაზე სკრიპტი ამ სიტყვებს გამოიყენებს.');
+      alert('პარამეტრები შენახულია! მონიშნული სიტყვები (' + activeWords.length + ') აქტიურია.');
     }
 
     function switchTab(tab) {
@@ -174,14 +285,21 @@
     }
 
     function renderLots() {
+      const filterText = (document.getElementById('lotsFilterInput')?.value || '').trim().toLowerCase();
       const newLots = allLots.filter(l => l.status === 'new');
       const archivedLots = allLots.filter(l => l.status === 'archived');
       document.getElementById('newCount').textContent = newLots.length;
       document.getElementById('archivedCount').textContent = archivedLots.length;
 
-      const list = currentTab === 'new' ? newLots : archivedLots;
-      const grid = document.getElementById('lotsGrid');
+      let list = currentTab === 'new' ? newLots : archivedLots;
+      if (filterText) {
+        list = list.filter(l =>
+          (l.title || '').toLowerCase().includes(filterText) ||
+          (l.ai_note || '').toLowerCase().includes(filterText)
+        );
+      }
 
+      const grid = document.getElementById('lotsGrid');
       if (!list.length) {
         grid.innerHTML = `<div class="col-span-full bg-slate-900/60 border border-dashed border-slate-800 rounded-2xl p-10 text-center text-sm text-slate-400">
           ${currentTab === 'new' ? 'სამუშაო დაფა სუფთაა. ახალი ლოტები ავტომატურად გამოჩნდება.' : 'არქივი ცარიელია.'}
