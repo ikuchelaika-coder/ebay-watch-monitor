@@ -31,71 +31,116 @@ ENDED_PHRASES = [
     "0 available",
 ]
 
+MUST_HAVE_WORDS = [
+    "watch", "watches", "chronograph", "timepiece", "bulova", "omega", "seiko",
+    "longines", "tissot", "elgin", "waltham", "hamilton", "gruen", "wittnauer",
+    "citizen", "timex", "swatch", "casio", "rolex", "cartier", "zenith", "movado"
+]
+
+JUNK_WORDS = [
+    "box only", "empty box", "watch box", "display case", "watch band", "watch strap",
+    "leather strap", "bracelet only", "buckle", "clasp", "spring bar", "battery",
+    "batteries", "wall clock", "alarm clock", "desk clock", "manual", "catalog",
+    "advertisement", "ad print", "poster", "tool", "opener", "holder", "crystal only",
+    "crown only", "hands only", "dial only", "bezel only", "smartwatch", "apple watch",
+    "garmin", "fitbit", "samsung galaxy watch", "charger", "cable"
+]
+
+def is_relevant_text(title, snippet=""):
+    combined = f"{title} {snippet}".lower()
+    if any(junk in combined for junk in JUNK_WORDS):
+        return False
+    if not any(good in combined for good in MUST_HAVE_WORDS):
+        return False
+    return True
+
+def get_real_image_for_item(ebay_id, title):
+    """პოულობს რეალურ eBay სურათს 3 სხვადასხვა წყაროდან"""
+    # წყარო 1: პირდაპირ eBay გვერდის მეტა-ტეგი
+    try:
+        resp = cffi_requests.get(f"https://www.ebay.com/itm/{ebay_id}", impersonate="chrome", timeout=10)
+        if resp.status_code == 200:
+            img_m = re.search(r'<meta[^>]+property="og:image"[^>]+content="([^"]+)"', resp.text)
+            if img_m and "ebaystatic" not in img_m.group(1):
+                return re.sub(r's-l\d+', 's-l800', img_m.group(1))
+            alt_m = re.search(r'https://i\.ebayimg\.com/images/g/[A-Za-z0-9_-]+/s-l\d+\.(?:jpg|webp|png)', resp.text)
+            if alt_m:
+                return re.sub(r's-l\d+', 's-l800', alt_m.group(0))
+    except Exception:
+        pass
+
+    # წყარო 2: DDGS Images ძიება eBay ID-ით და სათაურით
+    for q in [f"ebay {ebay_id}", f"ebay {title[:55]}"]:
+        try:
+            with DDGS() as ddgs:
+                imgs = list(ddgs.images(q, max_results=3))
+                for im in imgs:
+                    url = im.get("image") or im.get("thumbnail") or ""
+                    if url and "ebaystatic" not in url and url.startswith("http"):
+                        return re.sub(r's-l\d+', 's-l800', url)
+        except Exception:
+            pass
+
+    # წყარო 3: Bing Images HTML
+    try:
+        q = urllib.parse.quote_plus(f"ebay {title[:55]}")
+        resp = cffi_requests.get(f"https://www.bing.com/images/search?q={q}", impersonate="chrome", timeout=10)
+        if resp.status_code == 200:
+            img_m = re.search(r'https://i\.ebayimg\.com/images/g/[A-Za-z0-9_-]+/s-l\d+\.(?:jpg|webp|png)', resp.text)
+            if img_m:
+                return re.sub(r's-l\d+', 's-l800', img_m.group(0))
+    except Exception:
+        pass
+
+    return ""
+
 def check_if_active_and_extract(ebay_id, fallback_title, fallback_price):
-    """ამოწმებს ნივთი რეალურად აქტიურია თუ უკვე გაყიდული/დასრულებული, და იღებს ზუსტ ფოტოსა და ფასს"""
     url = f"https://www.ebay.com/itm/{ebay_id}"
+    title = fallback_title
+    price = fallback_price
+
     try:
         resp = cffi_requests.get(url, impersonate="chrome", timeout=12)
-        # თუ eBay-მ 200 დააბრუნა, ვამოწმებთ სტატუსს
+        if resp.status_code == 404:
+            return None
         if resp.status_code == 200:
             html_lower = resp.text.lower()
-            for phrase in ENDED_PHRASES:
-                if phrase in html_lower:
-                    print(f"  ⛔ გამოტოვებულია (უკვე გაყიდული/დასრულებული): {ebay_id}")
-                    return None
+            if any(phrase in html_lower for phrase in ENDED_PHRASES):
+                print(f"  ⛔ გაყიდული/დასრულებულია: {ebay_id}")
+                return None
 
-            # სათაური
             title_m = re.search(r'<meta[^>]+property="og:title"[^>]+content="([^"]+)"', resp.text)
-            title = title_m.group(1).replace(" | eBay", "").strip() if title_m else fallback_title
+            if title_m:
+                title = title_m.group(1).replace(" | eBay", "").strip()
 
-            # რეალური მთავარი ფოტო
-            img_m = re.search(r'<meta[^>]+property="og:image"[^>]+content="([^"]+)"', resp.text)
-            img_url = img_m.group(1) if img_m else ""
-            if img_url and "ebaystatic" not in img_url:
-                img_url = re.sub(r's-l\d+', 's-l800', img_url)
-            else:
-                img_url = ""
-
-            # ზუსტი ფასი
             price_m = re.search(r'"price"\s*:\s*"?([\d,\.]+)"?', resp.text)
             curr_m = re.search(r'"priceCurrency"\s*:\s*"([A-Z]{3})"', resp.text)
             if price_m:
                 curr = "$" if (not curr_m or curr_m.group(1) == "USD") else curr_m.group(1) + " "
                 price = f"{curr}{price_m.group(1)}"
-            else:
-                price = fallback_price
-
-            return {
-                "active": True,
-                "title": title,
-                "price": price,
-                "image_url": img_url
-            }
-        elif resp.status_code == 404:
-            print(f"  ⛔ გამოტოვებულია (წაშლილი განცხადება): {ebay_id}")
-            return None
     except Exception:
         pass
 
-    # თუ itm გვერდმა დროებით არ გვიპასუხა, ვამოწმებთ ტექსტში ხომ არ წერია Sold/Ended
-    low_title = fallback_title.lower()
-    if any(w in low_title for w in ["sold", "ended", "completed"]):
+    if not is_relevant_text(title):
+        print(f"  ⛔ უაზრო განცხადება გაიფილტრა: {title[:50]}")
+        return None
+
+    img_url = get_real_image_for_item(ebay_id, title)
+    if not img_url:
+        print(f"  ⛔ ფოტო ვერ მოიძებნა, გამოტოვებულია: {title[:45]}")
         return None
 
     return {
-        "active": True,
-        "title": fallback_title,
-        "price": fallback_price,
-        "image_url": ""
+        "title": title,
+        "price": price,
+        "image_url": img_url
     }
 
 def search_ebay_items(query, scan_mode="new"):
-    """ეძებს მხოლოდ ბოლო დღეების/კვირის აქტიურ განცხადებებს (3 თვის ძველებს აღარ იღებს)"""
     results = []
-    # new რეჟიმში ვეძებთ ბოლო კვირის ('w') შედეგებს, deep-ში ბოლო თვის ('m')
     t_limit = "w" if scan_mode == "new" else "m"
 
-    for sq in [f'site:ebay.com/itm {query}', f'site:ebay.com/itm "{query}"']:
+    for sq in [f'site:ebay.com/itm "{query}"', f'site:ebay.com/itm {query}']:
         try:
             with DDGS() as ddgs:
                 for r in ddgs.text(sq, timelimit=t_limit, max_results=15):
@@ -103,7 +148,9 @@ def search_ebay_items(query, scan_mode="new"):
                     title = (r.get("title") or "").replace(" | eBay", "").strip()
                     body = r.get("body") or r.get("snippet") or ""
 
-                    # თავიდანვე ვფილტრავთ გაყიდულებს
+                    if not is_relevant_text(title, body):
+                        continue
+
                     combined_low = (title + " " + body).lower()
                     if any(p in combined_low for p in ["sold for", "bidding has ended", "this listing has ended", "was sold"]):
                         continue
@@ -119,35 +166,25 @@ def search_ebay_items(query, scan_mode="new"):
                     if not any(x["ebay_id"] == eid for x in results):
                         results.append({
                             "ebay_id": eid,
-                            "title": title or f"eBay Watch #{eid}",
+                            "title": title,
                             "snippet": body,
                             "price": price,
                             "ebay_url": f"https://www.ebay.com/itm/{eid}"
                         })
         except Exception as e:
-            print(f"DDGS notice ({t_limit}): {e}")
+            print(f"DDGS notice: {e}")
 
         if len(results) >= 10:
             break
         time.sleep(1)
 
-    return results[:15]
-
-def get_fallback_thumbnail(title):
-    try:
-        with DDGS() as ddgs:
-            imgs = list(ddgs.images(f"ebay {title[:60]}", max_results=2))
-            if imgs and imgs[0].get("image"):
-                return imgs[0]["image"]
-    except Exception:
-        pass
-    return "https://placehold.co/600x400/0f172a/fbbf24?text=eBay+Vintage+Watch"
+    return results[:12]
 
 def analyze_lot(title, snippet):
     prompt = (
-        f"Title: '{title}'. Description: '{snippet}'. "
-        "Is this an active vintage watch or lot of watches (gold-plated, gold-filled, mechanical, quartz)? "
-        "Reject ONLY empty boxes or loose straps with no watch. "
+        f"You are a strict vintage watch buyer filter. Title: '{title}'. Description: '{snippet}'. "
+        "Accept ONLY real wristwatches, pocket watches, or watch lots/bundles (especially vintage, gold-plated, gold-filled, mechanical). "
+        "Strictly REJECT parts, empty boxes, straps, tools, clocks, smartwatches, or non-watch items. "
         "Reply ONLY valid JSON: {\"match\": true/false, \"note_ge\": \"მოკლე აღწერა ქართულად (1 წინადადება)\"}"
     )
     for model_id in ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-flash-latest"]:
@@ -155,13 +192,14 @@ def analyze_lot(title, snippet):
             resp = ai_client.models.generate_content(model=model_id, contents=prompt)
             text = resp.text.strip().replace("```json", "").replace("```", "").strip()
             data = json.loads(text)
-            return bool(data.get("match", True)), data.get("note_ge", "ვინტაჟური საათების ლოტი eBay-დან")
+            return bool(data.get("match", False)), data.get("note_ge", "ვინტაჟური საათების ლოტი")
         except Exception:
             continue
-    return True, "აქტიური ლოტი eBay-დან: " + (snippet[:80] if snippet else title[:80])
+    # თუ AI დროებით მიუწვდომელია, ტექსტური ფილტრი უკვე გავლილი აქვს
+    return True, "საათი / ლოტი eBay-დან: " + title[:75]
 
 def main():
-    print("=== სკანერი დაიწყო (მხოლოდ ახალი და აქტიური განცხადებები) ===")
+    print("=== სკანერი დაიწყო (მკაცრი ფილტრი + რეალური ფოტოები) ===")
     settings_res = supabase.table("app_settings").select("*").eq("id", 1).execute()
     settings = settings_res.data[0] if settings_res.data else {}
     keywords = settings.get("keywords") or ["vintage gold plated watch lot"]
@@ -173,13 +211,12 @@ def main():
     added_total = 0
     for kw in keywords:
         items = search_ebay_items(kw, scan_mode=scan_mode)
-        print(f"სიტყვა '{kw}' -> ნაპოვნია {len(items)} ბოლოდროინდელი კანდიდატი")
+        print(f"სიტყვა '{kw}' -> გაფილტრული კანდიდატი: {len(items)}")
 
-        for item in items[:10]:
+        for item in items[:8]:
             if item["ebay_id"] in existing_ids:
                 continue
 
-            # ვამოწმებთ ნამდვილად აქტიურია თუ არა ნივთი eBay-ზე
             verified = check_if_active_and_extract(item["ebay_id"], item["title"], item["price"])
             if not verified:
                 existing_ids.add(item["ebay_id"])
@@ -187,14 +224,13 @@ def main():
 
             is_match, note_ge = analyze_lot(verified["title"], item["snippet"])
             if is_match:
-                img_url = verified["image_url"] or get_fallback_thumbnail(verified["title"])
                 try:
                     supabase.table("watch_lots").insert({
                         "ebay_id": item["ebay_id"],
                         "title": verified["title"],
                         "price": verified["price"],
                         "lot_type": "eBay Lot",
-                        "image_url": img_url,
+                        "image_url": verified["image_url"],
                         "ebay_url": item["ebay_url"],
                         "ai_match": True,
                         "ai_note": note_ge,
@@ -203,12 +239,12 @@ def main():
                     }).execute()
                     existing_ids.add(item["ebay_id"])
                     added_total += 1
-                    print(f"✅ დაემატა აქტიური: {verified['title'][:55]} ({verified['price']})")
+                    print(f"✅ დაემატა ფოტოთი: {verified['title'][:50]} | {verified['price']}")
                 except Exception as db_err:
                     print(f"❌ DB შეცდომა: {db_err}")
             time.sleep(0.5)
 
-    print(f"=== დასრულდა! სულ დაემატა {added_total} აქტიური ახალი ლოტი ===")
+    print(f"=== დასრულდა! სულ დაემატა {added_total} სუფთა ლოტი რეალური ფოტოთი ===")
 
 if __name__ == "__main__":
     main()
