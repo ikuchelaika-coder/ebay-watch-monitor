@@ -1,6 +1,7 @@
 import os
 import re
 import json
+import base64
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -16,9 +17,14 @@ GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 ai_client = genai.Client(api_key=GEMINI_API_KEY)
 
-def fetch_image(url):
+def fetch_image(src):
+    if not src:
+        return None
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        if src.startswith("data:image"):
+            header, encoded = src.split(",", 1)
+            return Image.open(BytesIO(base64.b64decode(encoded))).convert("RGB")
+        req = urllib.request.Request(src, headers={"User-Agent": "Mozilla/5.0"})
         with urllib.request.urlopen(req, timeout=10) as resp:
             return Image.open(BytesIO(resp.read())).convert("RGB")
     except Exception:
@@ -57,8 +63,8 @@ def main():
     settings_res = supabase.table("app_settings").select("*").eq("id", 1).execute()
     settings = settings_res.data[0] if settings_res.data else {}
     keywords = settings.get("keywords") or ["vintage gold plated watch lot"]
-    ref_url = settings.get("reference_image_url") or ""
-    ref_img = fetch_image(ref_url) if ref_url else None
+    ref_src = settings.get("reference_image_url") or ""
+    ref_img = fetch_image(ref_src)
 
     existing_res = supabase.table("watch_lots").select("ebay_id").execute()
     existing_ids = {row["ebay_id"] for row in (existing_res.data or [])}
